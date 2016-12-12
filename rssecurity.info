@@ -1,0 +1,10 @@
+name = RS Security
+description = Simple security module for block robots
+package = redsign.hu
+core = 7.x
+
+configure = admin/rssecurity/settings
+
+version = "7.x-1.9"
+project = "hu.redsign"
+datestamp = "1463663350"

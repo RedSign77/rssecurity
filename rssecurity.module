@@ -1,0 +1,139 @@
+<?php
+include_once 'var/const.php';
+/**
+ * Implements hook_user_presave().
+ *
+ * @param array $edit form values
+ * @param variable $account user object
+ * @param variable $category The active category of user information being edited.
+ */
+function rssecurity_user_presave(&$edit, $account, $category)
+{
+    // Check new user registration
+    if ($account->is_new) {
+        $blocked = db_select(RSSEC_TBL_MAIL, 'blck')
+            ->fields('blck')
+            ->execute();
+        while ($row = $blocked->fetchAssoc()) {
+            if (strstr($account->mail, $row['mail'])) {
+                drupal_set_message('Sorry, your e-mail address is blacklisted.<br>Security filter: <strong>' . $row['mail'] . '</strong><br>Please contact the system administrator.', 'error');
+                watchdog(
+                    'rssecurity',
+                    'Blacklisted registration: %account_mail, filter: %filter',
+                    array(
+                        '%account_mail' => $account->mail,
+                        '%filter' => $row['mail']
+                    )
+                );
+                drupal_not_found();
+                module_invoke_all('exit');
+                drupal_exit('<front>');
+            }
+        }
+    }
+}
+
+function rssecurity_menu()
+{
+    $items = array();
+    $items[RSSEC_ADMINROOT] = array(
+        'title' => 'RS Security',
+        'page callback' => 'rssec_home',
+        'page arguments' => array(),
+        'access arguments' => array('rssecurity admin'),
+        'type' => MENU_NORMAL_ITEM | MENU_VISIBLE_IN_BREADCRUMB,
+    );
+    $items[RSSEC_ADMINROOT . '/add-new'] = array(
+        'title' => 'RS Security',
+        'page callback' => 'sha_add_blocked_email_page',
+        'page arguments' => array(),
+        'access arguments' => array('rssecurity admin'),
+        'type' => MENU_NORMAL_ITEM | MENU_VISIBLE_IN_BREADCRUMB,
+    );
+    return $items;
+}
+
+function rssec_home()
+{
+	drupal_add_js(drupal_get_path('module', 'rssecurity') . '/js/rssec-admin.js');
+	drupal_set_title('Blokkolt e-mail címek');
+	$page = array();
+	$header = array(
+		array(
+			'data'  => 'ID',
+			'field' => 'id'
+		),
+		array(
+			'data'  => 'Dátum',
+			'field' => 'created_at'
+		),
+		array(
+			'data'  => 'E-mail töredék',
+			'field' => 'mail'
+		),
+	);
+	$query = db_select(RSSEC_TBL_MAIL, 'blocked')->fields('blocked');
+	$query = $query->extend('TableSort')
+	               ->orderByHeader($header);
+	$query = $query->extend('PagerDefault')
+	               ->limit(20);
+	$emails = $query->execute();
+	$rows = array();
+	while ($row = $emails->fetchAssoc()) {
+		$rows[] = array(
+			$row['id'],
+			$row['created_at'],
+			$row['mail'],
+		);
+	}
+	$page['buttons']['#markup'] = '<div class="well well-sm"><button data-url="/' . RSSEC_ADMINROOT . '/add-new" class="btn btn-danger">Hozzáadás</button></div>';
+	$page['table']['#markup'] = theme('table', array(
+			'header' => $header,
+			'rows'   => $rows
+		)) . theme('pager');
+
+	return $page;
+}
+
+function sha_add_blocked_email_page() {
+	drupal_set_title('Új e-mail cím hozzáadása');
+	$form = drupal_get_form('add_blocked_email_form');
+	$page['#markup'] = render($form);
+
+	return $page;
+}
+
+function add_blocked_email_form($form, &$form_state) {
+	$form = array();
+	$form['mail'] = array(
+		'#type'          => 'textfield',
+		'#title'         => 'E-mail töredék',
+		'#default_value' => '',
+		'#description'   => 'Adja meg az e-mail cím töredékét, ami nem szerepelhet az e-mail címben, pl.: yahoo.com blokkolja az összes yahoo.com e-mail címet!',
+		'#required'      => true,
+	);
+	$form['submit'] = array(
+		'#type'          => 'submit',
+		'#default_value' => 'Hozzáadás',
+	);
+
+	return $form;
+}
+
+function add_blocked_email_form_submit($form, &$form_state) {
+	$val = $form_state['values'];
+	try {
+		db_insert(RSSEC_TBL_MAIL)
+			->fields(array(
+				'mail' => $val['mail']
+			))
+			->execute();
+		drupal_set_message('Az e-mail hozzáadása sikeresen megtörtént.');
+		watchdog('blocked_mails', "Hozzáadás: " . $val['mail']);
+		drupal_goto(RSSEC_ADMINROOT);
+	}
+	catch (Exception $e) {
+		drupal_set_message('Az e-mail hozzáadása sikertelen volt, az adminisztrátor értesítve.', 'error');
+		watchdog('blocked_mails', $e->getMessage());
+	}
+}

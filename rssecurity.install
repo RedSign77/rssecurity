@@ -1,0 +1,64 @@
+<?php
+
+include_once __DIR__ . '/var/const.php';
+
+function rssecurity_schema()
+{
+    $schema = array();
+    $schema[RSSEC_TBL_MAIL] = array(
+        'description' => 'RS Security blocked items',
+        'fields' => array(
+            'id' => array(
+                'type' => 'serial',
+                'size' => 'big',
+                'description' => 'ID',
+                'unsigned' => true,
+                'not null' => true,
+            ),
+            'created_at' => array(
+                'type' => 'datetime',
+                'mysql_type' => 'datetime',
+                'pgsql_type' => 'timestamp without time zone',
+                'not null' => true,
+            ),
+            'mail' => array(
+                'type' => 'varchar',
+                'length' => 255,
+                'not null' => true,
+            ),
+        ),
+        'indexes' => array(
+            'item_label' => array('mail')
+        ),
+        'primary key' => array('id'),
+    );
+    return $schema;
+}
+
+/**
+ * Upload blacklist
+ *
+ * @return string
+ * @throws Exception
+ */
+function rssecurity_update_7000()
+{
+    $blacklist_file = drupal_get_path('module', 'rssecurity') . '/var/blacklist.csv';
+    if (is_file($blacklist_file)) {
+        $blacklist = array_map('str_getcsv', file($blacklist_file));
+        $query = db_insert(RSSEC_TBL_MAIL)
+            ->fields(array(
+                'created_at',
+                'mail'
+            ));
+        foreach ($blacklist as $value) {
+            $query->values(array(
+                'created_at' => date('Y-m-d H:i:s', time()),
+                'mail' => current($value)
+            ));
+        }
+        $query->execute();
+        return 'Blacklist csv parsed and added successfully.';
+    }
+    return 'No blacklist csv, the table is empty.';
+}
